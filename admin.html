@@ -738,13 +738,13 @@
 
             // 2. Fetch all attendance for this month
             const monthName = new Date(year, month, 1).toLocaleString('en-US', { month: 'long' });
+            let attendanceMap = {}; // serial -> { date -> id }
             
             try {
                 const snap = await window.db.collection('attendance').get();
                 let attnRecords = [];
                 snap.forEach(doc => attnRecords.push({ id: doc.id, ...doc.data() }));
                 
-                const attendanceMap = {}; // serial -> { date -> id }
                 attnRecords.forEach(r => {
                     // Check if the record belongs to the selected month and year
                     if (r.date && r.date.includes(monthName) && r.date.includes(year.toString())) {
