@@ -1,4 +1,4 @@
-# ROTC Attendance System - Deployment Guide
+# CWTS Attendance System - Deployment Guide
 
 This project is a **Static Frontend** application that uses **Cloud Firestore (Firebase)** as its backend. It does not require a Node.js server.
 

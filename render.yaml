@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: rotc-attendance-system
+    name: cwts-attendance-system
     runtime: static
     buildCommand: "" # No build step needed for static files
     staticPublishPath: public
