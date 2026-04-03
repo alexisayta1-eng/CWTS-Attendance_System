@@ -275,11 +275,11 @@
                         <div style="display: flex; gap: 15px; flex-wrap: wrap;">
                             <div class="date-input-wrapper">
                                 <span style="font-size: 0.8rem; margin-right: 10px; opacity: 0.7;">DAY:</span>
-                                <input type="date" id="log-date-filter" onchange="loadLogs()">
+                                <input type="date" id="log-date-filter" onchange="window.startLogListener(); loadLogs();">
                             </div>
                             <div class="date-input-wrapper">
                                 <span style="font-size: 0.8rem; margin-right: 10px; opacity: 0.7;">DEPARTMENT:</span>
-                                <select id="log-unit-filter" onchange="loadLogs()"
+                                <select id="log-unit-filter" onchange="window.startLogListener(); loadLogs();"
                                     style="background:transparent; border:none; color:white; outline:none; font-weight:600; cursor:pointer;">
                                     <!-- Dynamic options -->
                                 </select>
@@ -1032,9 +1032,63 @@
                 content.style.display = 'flex';
                 initDashboard();
                 
-                // Polling for updates
-                setInterval(loadLogs, 10000);
-                setInterval(loadStudents, 30000);
+                // --- REAL-TIME LISTENERS (Replacing Polling) ---
+                
+                // 1. Listen for Student Changes
+                window.db.collection('cadets').onSnapshot(snap => {
+                    console.log("Real-time: Students updated");
+                    allStudents = [];
+                    snap.forEach(doc => allStudents.push(doc.data()));
+                    allStudents.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+                    renderStudents(allStudents);
+                    
+                    // If we are on the monthly sheet, refresh it too
+                    const sectionAttn = document.getElementById('section-attn-record');
+                    if (sectionAttn && sectionAttn.style.display !== 'none') {
+                        loadMonthlySheet();
+                    }
+                }, err => console.error("Students listener error:", err));
+
+                // 2. Listen for Attendance Changes (Today's Logs)
+                const setupLogListener = () => {
+                    const selectedDate = document.getElementById('log-date-filter').value;
+                    const dateParts = selectedDate.split('-');
+                    const formattedDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2])
+                        .toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+                    
+                    // Unsubscribe existing if any (simplest is just to re-run loadLogs which now could be onSnapshot)
+                    // For now, we'll keep loadLogs as is but call it on changes
+                };
+
+                // Actually, let's just make loadLogs or a separate listener handle it.
+                // Re-running loadLogs every 10s was the old way. 
+                // Let's use a real-time query for the currently selected date.
+                let unsubscribeLogs = null;
+                window.startLogListener = function() {
+                    if (unsubscribeLogs) unsubscribeLogs();
+                    
+                    const selectedDate = document.getElementById('log-date-filter').value;
+                    if (!selectedDate) return;
+                    
+                    const dateParts = selectedDate.split('-');
+                    const formattedDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2])
+                        .toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+                    
+                    const selectedUnit = document.getElementById('log-unit-filter').value;
+                    
+                    let query = window.db.collection('attendance').where("date", "==", formattedDate);
+                    if (selectedUnit !== "ALL") {
+                        query = query.where("department", "==", selectedUnit);
+                    }
+
+                    unsubscribeLogs = query.onSnapshot(snap => {
+                        console.log("Real-time: Logs updated for", formattedDate);
+                        loadLogs(); // We can still use loadLogs to render, but now it's triggered by Firestore
+                    }, err => console.error("Logs listener error:", err));
+                };
+
+                // Initialize log listener
+                setTimeout(window.startLogListener, 1000); // Small delay to ensure filters are ready
             }
         });
     </script>

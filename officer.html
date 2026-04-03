@@ -458,15 +458,19 @@
 
             // Check for existing session
             if (sessionStorage.getItem('officerAuthed') === 'true') {
-                officerId = sessionStorage.getItem('officerId');
-                officerName = sessionStorage.getItem('officerName');
+                officerName = sessionStorage.getItem('officerName') || "Duty Officer";
                 document.getElementById('login-overlay').style.display = 'none';
                 document.getElementById('officer-content').style.display = 'flex';
                 document.getElementById('officer-welcome').textContent = `OFFICER IN CHARGE: ${officerName}`;
                 
-                // Polling for updates
-                loadOfficerLogs();
-                setInterval(loadOfficerLogs, 10000);
+                // --- REAL-TIME LISTENERS (Replacing Polling) ---
+                const now = new Date();
+                const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+                
+                window.db.collection('attendance').where("date", "==", dateStr).onSnapshot(snap => {
+                    console.log("Real-time: Officer logs updated");
+                    loadOfficerLogs(); // Refresh the UI when data changes
+                }, err => console.error("Officer logs listener error:", err));
             }
         });
     </script>
