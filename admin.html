@@ -602,6 +602,35 @@
             }
         }
 
+        // --- Monthly Filters Initialization ---
+        function initMonthlyFilters() {
+            const yearSelect = document.getElementById('attn-sheet-year');
+            const monthSelect = document.getElementById('attn-sheet-month');
+            if (!yearSelect || !monthSelect) return;
+
+            const now = new Date();
+            const currentYear = now.getFullYear();
+            const currentMonth = now.getMonth();
+
+            // Fill Years (Past 2 years and next year)
+            if (yearSelect.options.length <= 1) {
+                yearSelect.innerHTML = "";
+                for (let y = currentYear - 2; y <= currentYear + 1; y++) {
+                    const opt = document.createElement('option');
+                    opt.value = y;
+                    opt.textContent = y;
+                    opt.style.color = "black";
+                    if (y === currentYear) opt.selected = true;
+                    yearSelect.appendChild(opt);
+                }
+            }
+
+            // Set current month if not already selected
+            if (monthSelect.selectedIndex === -1 || monthSelect.value === "") {
+                monthSelect.value = currentMonth;
+            }
+        }
+
         // --- Logic: Attendance ---
         async function loadLogs() {
             const selectedDate = document.getElementById('log-date-filter').value;
