@@ -1,6 +1,7 @@
 services:
-  - type: static
+  - type: web
     name: rotc-attendance-system
+    runtime: static
     buildCommand: "" # No build step needed for static files
     staticPublishPath: public
     headers:
