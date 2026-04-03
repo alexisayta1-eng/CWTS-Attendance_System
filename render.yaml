@@ -1,0 +1,17 @@
+services:
+  - type: static
+    name: rotc-attendance-system
+    env: static
+    buildCommand: "" # No build step needed for static files
+    publishPath: public
+    headers:
+      - path: /*
+        name: Service-Worker-Allowed
+        value: /
+    routes:
+      - type: rewrite
+        source: /admin
+        destination: /admin.html
+      - type: rewrite
+        source: /scanner
+        destination: /officer.html

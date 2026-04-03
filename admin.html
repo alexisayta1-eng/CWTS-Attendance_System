@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - CWTS Attendance</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1a2a6c">
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="firebase-config.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        #login-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(15px);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .login-box {
+            width: 90%;
+            max-width: 400px;
+            padding: 2.5rem;
+        }
+
+        .filter-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .date-input-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            padding: 5px 15px;
+        }
+
+        .date-input-wrapper input[type="date"] {
+            background: transparent;
+            border: none;
+            color: white;
+            outline: none;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .date-input-wrapper input[type="date"]::-webkit-calendar-picker-indicator {
+            filter: invert(1);
+            cursor: pointer;
+        }
+
+        /* Print Specifics */
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+
+            #print-area,
+            #print-area * {
+                visibility: visible;
+            }
+
+            #print-area {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                display: block !important;
+            }
+
+            .no-print {
+                display: none !important;
+            }
+
+            /* Added Print Styles for bulk printing */
+            .id-card-print {
+                page-break-inside: avoid;
+                break-inside: avoid;
+                margin-bottom: 20px;
+                border: 2px solid #1a2a6c;
+            }
+        }
+
+        #print-area {
+            display: none;
+            padding: 20px;
+            color: black;
+            background: white;
+            border-radius: 12px;
+        }
+
+        .id-card-print {
+            border: 2px solid #1a2a6c;
+            padding: 20px;
+            width: 350px;
+            text-align: center;
+            margin: auto;
+            border-radius: 15px;
+        }
+
+        /* Toast Styles */
+        #toast-container {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10001;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        }
+
+        .toast {
+            background: #10b981;
+            color: white;
+            padding: 20px 40px;
+            border-radius: 12px;
+            font-weight: 900;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+            border: 3px solid #ffffff;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            min-width: 320px;
+            justify-content: center;
+            font-size: 1.4rem;
+            position: relative;
+            z-index: 999999;
+            animation: toast-in 0.4s ease-out;
+            transition: opacity 0.5s;
+        }
+
+        .toast.error {
+            background: #ef4444; /* red */
+        }
+
+        @keyframes toast-in {
+            from { top: -50px; opacity: 0; }
+            to { top: 20px; opacity: 1; }
+        }
+
+        @keyframes toast-out {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+    </style>
+</head>
+
+<body style="display: block; overflow-x: hidden;">
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+    <!-- Print Hidden Area -->
+    <div id="print-area"></div>
+    <!-- Login Overlay -->
+    <div id="login-overlay">
+        <div class="glass-card login-box" style="position: relative;">
+            <a href="index.html" class="back-btn">←</a>
+            <h1 style="font-size: 1.5rem;">ADMIN LOGIN</h1>
+            <div class="input-group">
+                <label>Username</label>
+                <input type="text" id="admin-user" placeholder="Enter Username">
+            </div>
+            <div class="input-group">
+                <label>Password</label>
+                <input type="password" id="admin-pass" placeholder="Enter Password">
+            </div>
+            <button class="btn" onclick="attemptLogin()">ACCESS PANEL</button>
+            <p id="login-err"
+                style="color: #f87171; font-size: 0.8rem; text-align: center; margin-top: 10px; display: none;">Invalid
+                Credentials</p>
+        </div>
+    </div>
+
+    <!-- Absent Students Modal -->
+    <div id="absent-modal" class="id-card-print" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10000; background: white; color: black; padding: 30px; border-radius: 20px; display: none; box-shadow: 0 0 50px rgba(0,0,0,0.5); width: 90%; max-width: 500px; max-height: 80vh; overflow-y: auto;">
+        <h2 style="color: #1a2a6c; margin-bottom: 20px;">ABSENT STUDENTS</h2>
+        <div id="absent-list-content" style="text-align: left; font-family: sans-serif;">
+            <!-- List goes here -->
+        </div>
+        <button class="btn" onclick="document.getElementById('absent-modal').style.display = 'none'" style="margin-top: 20px; background: #64748b; width: auto; padding: 10px 30px;">CLOSE</button>
+    </div>
+
+    <!-- Manual Attendance Modal -->
+    <div id="manual-attn-modal" class="id-card-print" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10000; background: white; color: black; padding: 30px; border-radius: 20px; display: none; box-shadow: 0 0 50px rgba(0,0,0,0.5); width: 90%; max-width: 400px; max-height: 90vh; overflow-y: auto;">
+        <h2 style="color: #1a2a6c; margin-bottom: 20px;">ADD ATTENDANCE</h2>
+        <div style="text-align: left; font-family: sans-serif;">
+            <p style="margin-bottom: 10px;"><strong>Student:</strong> <span id="manual-attn-name" style="color: #1a2a6c; font-weight: bold;"></span></p>
+            <div class="input-group" style="margin-bottom: 15px;">
+                <label style="color: #333; font-weight: 600; display: block; margin-bottom: 5px;">Date</label>
+                <input type="date" id="manual-attn-date" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem;">
+            </div>
+            <div class="input-group" style="margin-bottom: 15px;">
+                <label style="color: #333; font-weight: 600; display: block; margin-bottom: 5px;">Time</label>
+                <input type="time" id="manual-attn-time" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem;">
+            </div>
+            <div class="input-group" style="margin-bottom: 15px;">
+                <label style="color: #333; font-weight: 600; display: block; margin-bottom: 5px;">Record Type</label>
+                <select id="manual-attn-type" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; appearance: none; background: white;">
+                    <option value="IN">TIME IN</option>
+                    <option value="OUT">TIME OUT</option>
+                </select>
+            </div>
+            <input type="hidden" id="manual-attn-serial">
+            <input type="hidden" id="manual-attn-dept">
+            <input type="hidden" id="manual-attn-year">
+            <input type="hidden" id="manual-attn-sec">
+        </div>
+        <div style="display: flex; gap: 10px; margin-top: 20px;">
+            <button class="btn" onclick="saveManualAttendance()" style="flex: 1; background: #1a2a6c; margin: 0; padding: 12px;">SAVE RECORD</button>
+            <button class="btn" onclick="document.getElementById('manual-attn-modal').style.display = 'none'" style="flex: 1; background: #64748b; margin: 0; padding: 12px;">CANCEL</button>
+        </div>
+    </div>
+
+    <!-- Main Content with Sidebar -->
+    <div id="admin-content" class="admin-container" style="display: none;">
+        <!-- Left Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-logo">
+                <span style="font-size: 1.5rem;">🛡️</span>
+                <span>CWTS ADMIN</span>
+            </div>
+
+            <nav class="sidebar-nav">
+                <button id="side-logs" class="side-btn active" onclick="showTab('logs')">
+                    <span>📋</span> <span>Attendance Logs</span>
+                </button>
+                <button id="side-manage" class="side-btn" onclick="showTab('manage')">
+                    <span>📝</span> <span>Registration Form</span>
+                </button>
+                <button id="side-database" class="side-btn" onclick="showTab('database')">
+                    <span>🗄️</span> <span>Registered Students</span>
+                </button>
+                <button id="side-attn-record" class="side-btn" onclick="showTab('attn-record')">
+                    <span>✍️</span> <span>Attendance Record</span>
+                </button>
+
+            </nav>
+
+            <div class="sidebar-footer">
+                <button onclick="logout()" class="side-btn" style="color: #f87171;">
+                    <span>🚪</span> <span>Logout System</span>
+                </button>
+                <div style="margin-top: 1rem; font-size: 0.7rem; opacity: 0.5; padding-left: 1rem;">
+                    v1.2.5 Stable
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Workspace -->
+        <main class="main-content">
+            <div style="width: 100%; max-width: 1000px;">
+
+                <!-- Attendance Logs Section -->
+                <div id="section-logs" class="glass-card" style="width: 100%; max-width: none; margin-top: 0;">
+                    <div class="filter-bar">
+                        <h1 style="margin: 0; text-align: left;">ATTENDANCE LOGS</h1>
+                        <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+                            <div class="date-input-wrapper">
+                                <span style="font-size: 0.8rem; margin-right: 10px; opacity: 0.7;">DAY:</span>
+                                <input type="date" id="log-date-filter" onchange="loadLogs()">
+                            </div>
+                            <div class="date-input-wrapper">
+                                <span style="font-size: 0.8rem; margin-right: 10px; opacity: 0.7;">DEPARTMENT:</span>
+                                <select id="log-unit-filter" onchange="loadLogs()"
+                                    style="background:transparent; border:none; color:white; outline:none; font-weight:600; cursor:pointer;">
+                                    <!-- Dynamic options -->
+                                </select>
+                                <button onclick="addDepartment()" style="background: var(--accent); border: none; color: white; border-radius: 50%; width: 20px; height: 20px; font-size: 14px; cursor: pointer; margin-left: 5px; display: flex; align-items: center; justify-content: center;">+</button>
+                            </div>
+                             <div class="date-input-wrapper">
+                                <span style="font-size: 0.8rem; margin-right: 10px; opacity: 0.7;">YR & SEC:</span>
+                                <input type="text" id="log-yearsec-filter" placeholder="e.g. 1st - A" oninput="loadLogs()"
+                                    style="background:transparent; border:none; color:white; outline:none; font-weight:600; width: 100px;">
+                            </div>
+                            <button class="btn" onclick="printLogs()"
+                                style="width: auto; margin: 0; padding: 5px 20px; font-size: 0.8rem; background: var(--accent);">PRINT
+                                LOGS</button>
+                            <button class="btn" onclick="showAbsentees()"
+                                style="width: auto; margin: 0; padding: 5px 20px; font-size: 0.8rem; background: #ef4444;">ABSENTEES</button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Student Name</th>
+                                    <th>Department</th>
+                                    <th>Year & Section</th>
+                                    <th style="color: #4ade80;">Time</th>
+                                </tr>
+                            </thead>
+                            <tbody id="attendance-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Registration Form Section -->
+                <div id="section-manage" class="glass-card"
+                    style="width: 100%; max-width: none; margin-top: 0; display: none;">
+                    <h1 style="text-align: left;">STUDENT REGISTRATION</h1>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+                        <div>
+                            <div class="input-group">
+                                <label>Full Name</label>
+                                <input type="text" id="cadet-name" placeholder="Name">
+                            </div>
+                            <div class="input-group">
+                                <label>Student ID</label>
+                                <input type="text" id="cadet-serial" placeholder="e.g. 123-456">
+                            </div>
+                            <div class="input-group">
+                                <label>Department</label>
+                                <select id="cadet-dept" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); color: white; margin-bottom: 1rem;">
+                                    <!-- Dynamic options -->
+                                </select>
+                            </div>
+                            <div class="input-group">
+                                <label>Year Level</label>
+                                <select id="cadet-year" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); color: white; margin-bottom: 1rem;">
+                                    <option value="1st Year" style="color: black;">1st Year</option>
+                                    <option value="2nd Year" style="color: black;">2nd Year</option>
+                                    <option value="3rd Year" style="color: black;">3rd Year</option>
+                                    <option value="4th Year" style="color: black;">4th Year</option>
+                                </select>
+                            </div>
+                            <div class="input-group">
+                                <label>Section</label>
+                                <input type="text" id="cadet-section" placeholder="Section">
+                            </div>
+                            <div class="input-group">
+                                <label>Gender</label>
+                                <select id="cadet-gender" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(0, 0, 0, 0.2); color: white; margin-bottom: 1rem;">
+                                    <option value="Male" style="color: black;">Male</option>
+                                    <option value="Female" style="color: black;">Female</option>
+                                    <option value="Other" style="color: black;">Other</option>
+                                </select>
+                            </div>
+                            <button id="register-btn" class="btn" onclick="registerStudent()">SAVE & GENERATE</button>
+                        </div>
+                        <div
+                            style="text-align: center; border-left: 1px solid var(--glass-border); padding-left: 20px;">
+                            <label>QR IDENTITY</label>
+                            <div id="qrcode" class="qr-code-box"
+                                style="margin: 1rem auto; background: white; padding: 10px;"></div>
+                            <button id="download-btn" class="btn btn-secondary"
+                                style="display: none; width: auto; margin: 1rem auto;"
+                                onclick="downloadQR()">DOWNLOAD</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Student Database Section -->
+                <div id="section-database" class="glass-card"
+                    style="width: 100%; max-width: none; margin-top: 0; display: none;">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; gap: 20px;">
+                        <h1 style="text-align: left; margin: 0;">REGISTERED STUDENTS</h1>
+                        <div style="display: flex; gap: 10px;">
+                            <button class="btn" onclick="printSelectedStudents()" style="width: auto; margin: 0; padding: 5px 20px; font-size: 0.8rem; background: var(--accent);">PRINT SELECTED</button>
+                            <div class="date-input-wrapper" style="width: 100%; max-width: 300px;">
+                                <span style="font-size: 0.9rem; margin-right: 10px; opacity: 0.7;">🔍</span>
+                                <input type="text" id="cadet-search" placeholder="Search name or serial..."
+                                    oninput="filterStudents()"
+                                    style="background:transparent; border:none; color:white; outline:none; width: 100%;">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px; text-align: center;"><input type="checkbox" id="select-all-cadets" onclick="toggleSelectAllCadets(this)"></th>
+                                    <th>Student ID</th>
+                                    <th>Name</th>
+                                    <th>Department</th>
+                                    <th>Year & Section</th>
+                                    <th>Gender</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cadet-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Monthly Master Attendance Sheet -->
+                <div id="section-attn-record" class="glass-card" style="width: 100%; max-width: none; margin-top: 0; display: none; overflow-x: auto;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 15px;">
+                        <h1 style="text-align: left; margin: 0;">ATTENDANCE LIST</h1>
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                            <div class="date-input-wrapper">
+                                <span style="font-size: 0.8rem; margin-right: 5px; opacity: 0.7;">YEAR:</span>
+                                <select id="attn-sheet-year" onchange="loadMonthlySheet()" style="background:transparent; border:none; color:white; outline:none; font-weight:600; cursor:pointer;">
+                                    <!-- Dynamic -->
+                                </select>
+                            </div>
+                            <div class="date-input-wrapper">
+                                <span style="font-size: 0.8rem; margin-right: 5px; opacity: 0.7;">MONTH:</span>
+                                <select id="attn-sheet-month" onchange="loadMonthlySheet()" style="background:transparent; border:none; color:white; outline:none; font-weight:600; cursor:pointer;">
+                                    <option value="0" style="color: black;">JANUARY</option>
+                                    <option value="1" style="color: black;">FEBRUARY</option>
+                                    <option value="2" style="color: black;">MARCH</option>
+                                    <option value="3" style="color: black;">APRIL</option>
+                                    <option value="4" style="color: black;">MAY</option>
+                                    <option value="5" style="color: black;">JUNE</option>
+                                    <option value="6" style="color: black;">JULY</option>
+                                    <option value="7" style="color: black;">AUGUST</option>
+                                    <option value="8" style="color: black;">SEPTEMBER</option>
+                                    <option value="9" style="color: black;">OCTOBER</option>
+                                    <option value="10" style="color: black;">NOVEMBER</option>
+                                    <option value="11" style="color: black;">DECEMBER</option>
+                                </select>
+                            </div>
+                            <div class="date-input-wrapper">
+                                <span style="font-size: 0.8rem; margin-right: 5px; opacity: 0.7;">DEPT:</span>
+                                <select id="attn-sheet-dept" onchange="loadMonthlySheet()" style="background:transparent; border:none; color:white; outline:none; font-weight:600; cursor:pointer;">
+                                    <!-- Dynamic -->
+                                </select>
+                            </div>
+                            <div class="date-input-wrapper">
+                                <span style="font-size: 0.8rem; margin-right: 5px; opacity: 0.7;">YR & SEC:</span>
+                                <input type="text" id="attn-sheet-yearsec" placeholder="e.g. 1st - A" oninput="loadMonthlySheet()"
+                                    style="background:transparent; border:none; color:white; outline:none; font-weight:600; width: 100px;">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="table-container" style="max-height: 600px; overflow-x: auto;">
+                        <table style="border-collapse: collapse; width: 100%; min-width: 1000px; text-align: center; border: 1px solid rgba(255,255,255,0.2);">
+                            <thead>
+                                <tr style="background: rgba(255,255,255,0.05);">
+                                    <th rowspan="2" style="border: 1px solid rgba(255,255,255,0.2); width: 180px;">NAME</th>
+                                    <th colspan="5" style="border: 1px solid rgba(255,255,255,0.2);">WEEK 1</th>
+                                    <th colspan="5" style="border: 1px solid rgba(255,255,255,0.2);">WEEK 2</th>
+                                    <th colspan="5" style="border: 1px solid rgba(255,255,255,0.2);">WEEK 3</th>
+                                    <th colspan="5" style="border: 1px solid rgba(255,255,255,0.2);">WEEK 4</th>
+                                </tr>
+                                <tr style="background: rgba(255,255,255,0.05);">
+                                    <!-- Week 1 -->
+                                    <th style="border: 1px solid rgba(255,255,255,0.2); font-size: 0.7rem;">M</th>
+                                    <th style="border: 1px solid rgba(255,255,255,0.2); font-size: 0.7rem;">T</th>
+                                    <th style="border: 1px solid rgba(255,255,255,0.2); font-size: 0.7rem;">W</th>
+                                    <th style="border: 1px solid rgba(255,255,255,0.2); font-size: 0.7rem;">T</th>
+                                    <th style="border: 1px solid rgba(255,255,255,0.2); font-size: 0.7rem;">F</th>
+                                    <!-- Week 2 -->
+                                    <th style="border: 1px solid rgba(255,255,255,0.2); font-size: 0.7rem;">M</th>
+                                    <th style="border: 1px solid rgba(255,255,255,0.2); font-size: 0.7rem;">T</th>
+                                    <th style="border: 1px solid rgba(255,255,255,0.2); font-size: 0.7rem;">W</th>
+                                    <th style="border: 1px solid rgba(255,255,255,0.2); font-size: 0.7rem;">T</th>
+                                    <th style="border: 1px solid rgba(255,255,255,0.2); font-size: 0.7rem;">F</th>
+                                    <!-- Week 3 -->
+                                    <th style="border: 1px solid rgba(255,255,255,0.2); font-size: 0.7rem;">M</th>
+                                    <th style="border: 1px solid rgba(255,255,255,0.2); font-size: 0.7rem;">T</th>
+                                    <th style="border: 1px solid rgba(255,255,255,0.2); font-size: 0.7rem;">W</th>
+                                    <th style="border: 1px solid rgba(255,255,255,0.2); font-size: 0.7rem;">T</th>
+                                    <th style="border: 1px solid rgba(255,255,255,0.2); font-size: 0.7rem;">F</th>
+                                    <!-- Week 4 -->
+                                    <th style="border: 1px solid rgba(255,255,255,0.2); font-size: 0.7rem;">M</th>
+                                    <th style="border: 1px solid rgba(255,255,255,0.2); font-size: 0.7rem;">T</th>
+                                    <th style="border: 1px solid rgba(255,255,255,0.2); font-size: 0.7rem;">W</th>
+                                    <th style="border: 1px solid rgba(255,255,255,0.2); font-size: 0.7rem;">T</th>
+                                    <th style="border: 1px solid rgba(255,255,255,0.2); font-size: 0.7rem;">F</th>
+                                </tr>
+                            </thead>
+                            <tbody id="attendance-monthly-body">
+                                <!-- List goes here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+
+
+            </div>
+        </main>
+    </div>
+
+    <script>
+        let qrClearTimeout = null;
+        // --- Authentication ---
+        const overlay = document.getElementById('login-overlay');
+        const content = document.getElementById('admin-content');
+        if (sessionStorage.getItem('adminAuthed') === 'true') { 
+            overlay.style.display = 'none'; 
+            content.style.display = 'flex'; 
+            initDashboard(); 
+        }
+
+        function attemptLogin() {
+            const user = document.getElementById('admin-user').value;
+            const pass = document.getElementById('admin-pass').value;
+            if (user === 'admin' && pass === 'admin123') {
+                sessionStorage.setItem('adminAuthed', 'true');
+                overlay.style.display = 'none';
+                content.style.display = 'flex';
+                initDashboard();
+            } else {
+                document.getElementById('login-err').style.display = 'block';
+                setTimeout(() => document.getElementById('login-err').style.display = 'none', 3000);
+            }
+        }
+        function logout() { sessionStorage.removeItem('adminAuthed'); location.reload(); }
+
+        function showToast(msg, type = 'success') {
+            console.log("Toast:", msg);
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `<span>${type === 'success' ? '✅' : '❌'}</span> ${msg}`;
+            container.appendChild(toast);
+            
+            // Trigger transition
+            setTimeout(() => toast.classList.add('show'), 100);
+            
+            // Simple fade out
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => {
+                    if (toast.parentNode) toast.remove();
+                }, 400);
+            }, 3000);
+        }
+
+        // --- Navigation ---
+        function showTab(tab) {
+            document.getElementById('section-logs').style.display = tab === 'logs' ? 'block' : 'none';
+            document.getElementById('section-manage').style.display = tab === 'manage' ? 'block' : 'none';
+            document.getElementById('section-database').style.display = tab === 'database' ? 'block' : 'none';
+            document.getElementById('section-attn-record').style.display = tab === 'attn-record' ? 'block' : 'none';
+
+            document.getElementById('side-logs').classList.toggle('active', tab === 'logs');
+            document.getElementById('side-manage').classList.toggle('active', tab === 'manage');
+            document.getElementById('side-database').classList.toggle('active', tab === 'database');
+            document.getElementById('side-attn-record').classList.toggle('active', tab === 'attn-record');
+            
+            if (tab === 'attn-record') {
+                initMonthlyFilters();
+                loadMonthlySheet();
+            }
+        }
+
+        function initDashboard() {
+            const now = new Date();
+            document.getElementById('log-date-filter').value = now.toISOString().split('T')[0];
+            loadDepartments(); loadLogs(); loadStudents();
+        }
+
+        // --- Logic: Departments ---
+        async function loadDepartments() {
+            try {
+                const snap = await window.db.collection('departments').orderBy('name').get();
+                const logFilter = document.getElementById('log-unit-filter');
+                const sheetFilter = document.getElementById('attn-sheet-dept');
+                const regSelect = document.getElementById('cadet-dept');
+                
+                let options = '<option value="ALL" style="color: black;">ALL DEPARTMENTS</option>';
+                let regOptions = '';
+                
+                snap.forEach(doc => {
+                    const dept = doc.data().name;
+                    options += `<option value="${dept}" style="color: black;">${dept}</option>`;
+                    regOptions += `<option value="${dept}" style="color: black;">${dept}</option>`;
+                });
+                
+                if (logFilter) logFilter.innerHTML = options;
+                if (sheetFilter) sheetFilter.innerHTML = options;
+                if (regSelect) regSelect.innerHTML = regOptions;
+            } catch (e) {
+                console.error("Error loading departments:", e);
+            }
+        }
+
+        async function addDepartment() {
+            const name = prompt("Enter new Department name:");
+            if (name && name.trim()) {
+                const deptName = name.trim().toUpperCase();
+                try {
+                    await window.db.collection('departments').doc(deptName).set({ name: deptName });
+                    loadDepartments();
+                } catch (e) {
+                    alert("Error adding department.");
+                }
+            }
+        }
+
+        // --- Logic: Attendance ---
+        async function loadLogs() {
+            const selectedDate = document.getElementById('log-date-filter').value;
+            const selectedUnit = document.getElementById('log-unit-filter').value;
+            const yearSecQuery = document.getElementById('log-yearsec-filter').value.toLowerCase();
+            
+            const dateParts = selectedDate.split('-');
+            const formattedDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2])
+                .toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+            const list = document.getElementById('attendance-list');
+            try {
+                let query = window.db.collection('attendance').where("date", "==", formattedDate);
+                if (selectedUnit !== "ALL") {
+                    query = query.where("department", "==", selectedUnit);
+                }
+                const snap = await query.get();
+                let records = [];
+                snap.forEach(doc => records.push({ id: doc.id, ...doc.data() }));
+                // Sort by timestamp desc manually if we don't have composite index
+                records.sort((a,b) => {
+                   let ta = a.scan_time || "";
+                   let tb = b.scan_time || "";
+                   return tb.localeCompare(ta);
+                });
+                
+                list.innerHTML = "";
+                let hasResults = false;
+                records.forEach(d => {
+                    const combinedYearSec = `${d.year_level || ''} ${d.section || ''}`.toLowerCase();
+                    if (yearSecQuery && !combinedYearSec.includes(yearSecQuery)) return;
+                    
+                    hasResults = true;
+                    list.innerHTML += `<tr>
+                        <td><strong>${d.date}</strong></td>
+                        <td>${d.student_name}</td>
+                        <td style="color: var(--accent); font-weight: 600;">${d.department || '-'}</td>
+                        <td>${d.year_level || ''} - ${d.section || ''}</td>
+                        <td style="color:#4ade80; font-weight:bold;">${d.scan_time}</td>
+                    </tr>`;
+                });
+                if (!hasResults) list.innerHTML = "<tr><td colspan='5' style='text-align:center; padding: 2rem; opacity: 0.5;'>No records found for the applied filters on this date.</td></tr>";
+            } catch (error) {
+                console.error("Attendance query failed: ", error);
+                list.innerHTML = `<tr><td colspan='6' style='text-align:center; padding: 2rem; color: #f87171;'>Error: ${error.message}</td></tr>`;
+            }
+        }
+
+        async function showAbsentees() {
+            const selectedDate = document.getElementById('log-date-filter').value;
+            const selectedUnit = document.getElementById('log-unit-filter').value;
+            const yearSecQuery = document.getElementById('log-yearsec-filter').value.toLowerCase();
+            const formattedDate = new Date(selectedDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+            try {
+                const cadetsSnap = await window.db.collection('cadets').get();
+                let allCadets = [];
+                cadetsSnap.forEach(doc => allCadets.push(doc.data()));
+
+                const presentSnap = await window.db.collection('attendance').where("date", "==", formattedDate).get();
+                let presentRecords = [];
+                presentSnap.forEach(doc => presentRecords.push(doc.data()));
+
+                const presentSerialSet = new Set(presentRecords.map(r => r.serial));
+
+                const absentees = allCadets.filter(c => {
+                    if (selectedUnit !== "ALL" && c.department !== selectedUnit) return false;
+                    const combinedYearSec = `${c.year_level || ''} ${c.section || ''}`.toLowerCase();
+                    if (yearSecQuery && !combinedYearSec.includes(yearSecQuery)) return false;
+                    return !presentSerialSet.has(c.serial);
+                });
+
+                const modal = document.getElementById('absent-modal');
+                const content = document.getElementById('absent-list-content');
+                
+                if (absentees.length === 0) {
+                    content.innerHTML = "<p style='text-align:center; padding: 20px; opacity: 0.5;'>All students in this filter are present! 🥳</p>";
+                } else {
+                    content.innerHTML = `
+                        <p style="margin-bottom: 15px; font-weight: bold; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Total Absentees: ${absentees.length}</p>
+                        <ul style="list-style: none; padding: 0;">
+                            ${absentees.map(a => `
+                                <li style="padding: 8px 0; border-bottom: 1px solid #f1f5f9;">
+                                    <div style="font-weight: 600;">${a.name}</div>
+                                    <div style="font-size: 0.75rem; color: #64748b;">${a.serial} | ${a.department} | ${a.year_level} - ${a.section}</div>
+                                </li>
+                            `).join('')}
+                        </ul>
+                    `;
+                }
+                modal.style.display = 'block';
+            } catch (e) {
+                console.error(e);
+                alert("Error loading absentees.");
+            }
+        }
+
+        // --- Logic: Students ---
+        let allStudents = [];
+        async function loadStudents() {
+            try {
+                const snap = await window.db.collection('cadets').get();
+                allStudents = [];
+                snap.forEach(doc => allStudents.push(doc.data()));
+                // Sort alphabetically by name
+                allStudents.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+                renderStudents(allStudents);
+            } catch (e) {
+                console.error("Error loading students:", e);
+            }
+        }
+
+        async function loadMonthlySheet() {
+            const year = parseInt(document.getElementById('attn-sheet-year').value);
+            const month = parseInt(document.getElementById('attn-sheet-month').value);
+            const dept = document.getElementById('attn-sheet-dept').value;
+            const yearSecQuery = document.getElementById('attn-sheet-yearsec').value.toLowerCase();
+
+            // 1. Calculate Grid Dates (4 Weeks, M-F)
+            // We define Week 1 Day 1 as the first Monday of the month
+            let firstDay = new Date(year, month, 1);
+            while (firstDay.getDay() !== 1) { // 1 is Monday
+                firstDay.setDate(firstDay.getDate() + 1);
+            }
+
+            const gridDates = [];
+            for (let w = 0; w < 4; w++) {
+                for (let d = 0; d < 5; d++) {
+                    const date = new Date(firstDay);
+                    date.setDate(firstDay.getDate() + (w * 7) + d);
+                    gridDates.push(date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }));
+                }
+            }
+
+            // 2. Fetch all attendance for this month
+            const monthName = new Date(year, month, 1).toLocaleString('en-US', { month: 'long' });
+            
+            try {
+                const snap = await window.db.collection('attendance').get();
+                let attnRecords = [];
+                snap.forEach(doc => attnRecords.push({ id: doc.id, ...doc.data() }));
+                
+                const attendanceMap = {}; // serial -> { date -> id }
+                attnRecords.forEach(r => {
+                    // Check if the record belongs to the selected month and year
+                    if (r.date && r.date.includes(monthName) && r.date.includes(year.toString())) {
+                        if (!attendanceMap[r.serial]) attendanceMap[r.serial] = {};
+                        attendanceMap[r.serial][r.date] = r.id;
+                    }
+                });
+
+            } catch (e) {
+                console.error("Error loading monthly attendance:", e);
+            }
+
+            // 3. Filter Students
+            const filteredStudents = allStudents.filter(s => {
+                if (dept !== "ALL" && s.department !== dept) return false;
+                
+                const combinedYearSec = `${s.year_level || ''} ${s.section || ''}`.toLowerCase();
+                if (yearSecQuery && !combinedYearSec.includes(yearSecQuery)) return false;
+                
+                return true;
+            });
+            // Ensure they are sorted alphabetically
+            filteredStudents.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+
+            // 4. Render
+            const body = document.getElementById('attendance-monthly-body');
+            body.innerHTML = "";
+
+            filteredStudents.forEach(s => {
+                let row = `<tr>
+                    <td style="border: 1px solid rgba(255,255,255,0.2); text-align: left; padding: 10px; font-weight: 600;">${s.name}</td>`;
+                
+                gridDates.forEach(dateStr => {
+                    const record = (attendanceMap[s.serial] && attendanceMap[s.serial][dateStr]) || null;
+                    const isPresent = !!record;
+                    const scannedBy = isPresent ? (record.scanned_by || "N/A") : "";
+                    
+                    row += `<td title="${isPresent ? 'Record by: ' + scannedBy : 'No record'}"
+                                style="border: 1px solid rgba(255,255,255,0.2); transition: background 0.2s; ${isPresent ? 'background: rgba(74, 222, 128, 0.3); color: #4ade80; font-weight: bold;' : ''}">
+                                ${isPresent ? '✓' : ''}
+                            </td>`;
+                });
+                
+                row += `</tr>`;
+                body.innerHTML += row;
+            });
+
+            if (filteredStudents.length === 0) {
+                body.innerHTML = "<tr><td colspan='21' style='padding: 2rem; opacity: 0.5;'>No students found.</td></tr>";
+            }
+        }
+
+        async function toggleMonthlyAttendance(serial, name, dept, year, sec, dateStr, recordId) {
+            console.log("Toggle: ", recordId);
+            if (recordId !== "null" && recordId !== null) {
+                // Remove record
+                if (confirm(`Mark ${name} as ABSENT on ${dateStr}?`)) {
+                    try {
+                        await window.db.collection('attendance').doc(recordId).delete();
+                        loadMonthlySheet();
+                    } catch (e) { alert("Error deleting attendance."); }
+                }
+            } else {
+                // Add record
+                if (confirm(`Mark ${name} as PRESENT on ${dateStr}?`)) {
+                    const now = new Date();
+                    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    try {
+                        await window.db.collection('attendance').add({
+                            student_name: name,
+                            serial: serial,
+                            department: dept || "N/A",
+                            year_level: year || "",
+                            section: sec || "",
+                            scan_time: timeStr,
+                            date: dateStr,
+                            type: "IN",
+                            scanned_by: "Admin (Monthly Sheet)"
+                        });
+                        loadMonthlySheet();
+                    } catch (e) { alert("Error adding attendance."); }
+                }
+            }
+        }
+
+        function filterStudents() {
+            const query = document.getElementById('cadet-search').value.toLowerCase();
+            const filtered = allStudents.filter(c =>
+                c.name.toLowerCase().includes(query) ||
+                (c.serial && c.serial.toLowerCase().includes(query)) ||
+                (c.id && c.id.toLowerCase().includes(query))
+            );
+            renderStudents(filtered);
+        }
+
+        function renderStudents(data) {
+            const list = document.getElementById('cadet-list');
+            list.innerHTML = "";
+            data.forEach(d => {
+                list.innerHTML += `<tr>
+                    <td style="text-align: center;"><input type="checkbox" class="cadet-checkbox" data-serial="${d.serial}" data-name="${d.name}" data-dept="${d.department || ''}" data-year="${d.year_level || ''}" data-sec="${d.section || ''}" data-gender="${d.gender || ''}"></td>
+                    <td><strong>${d.serial}</strong></td>
+                    <td>${d.name}</td>
+                    <td>${d.department || ''}</td>
+                    <td>${d.year_level || ''} - ${d.section}</td>
+                    <td>${d.gender || ''}</td>
+                    <td style="display: flex; gap: 5px;">
+                        <button class="badge" onclick="showQR('${d.name}', '${d.serial}', '${d.department || ''}', '${d.year_level || ''}', '${d.section}', '${d.gender || ''}')" style="background:#fdbb2d; color:black; border:none; cursor:pointer;">VIEW QR</button>
+                        <button class="badge" onclick="printStudent('${d.serial}', '${d.name}', '${d.department || ''}', '${d.year_level || ''}', '${d.section}', '${d.gender || ''}')" style="background:#60a5fa; color:white; border:none; cursor:pointer;">PRINT</button>
+                        <button class="badge" onclick="deleteStudent('${d.serial}')" style="background:#ef4444; color:white; border:none; cursor:pointer;">REMOVE</button>
+                    </td>
+                </tr>`;
+            });
+        }
+        async function registerStudent() {
+            const btn = document.getElementById('register-btn');
+            const name = document.getElementById('cadet-name').value.toUpperCase();
+            const serial = document.getElementById('cadet-serial').value.toUpperCase();
+            const dept = document.getElementById('cadet-dept').value;
+            const year = document.getElementById('cadet-year').value;
+            const section = document.getElementById('cadet-section').value.toUpperCase();
+            const gender = document.getElementById('cadet-gender').value;
+
+            if (!name || !serial) {
+                alert("Student ID and Name are required!");
+                return;
+            }
+
+            if (!confirm(`Register and generate QR for ${name}?`)) return;
+
+            try {
+                // Loading state
+                btn.disabled = true;
+                btn.textContent = "SAVING...";
+                
+                const existing = await window.db.collection('cadets').where("serial", "==", serial).get();
+                if (!existing.empty) throw new Error("Student ID already exists");
+                
+                await window.db.collection('cadets').add({
+                    name, serial, department: dept, year_level: year, section, gender
+                });
+                
+                showQR(name, serial, dept, year, section, gender);
+                
+                document.getElementById('cadet-name').value = "";
+                document.getElementById('cadet-serial').value = "";
+                document.getElementById('cadet-section').value = "";
+                
+                showToast(`SUCCESS: ${name} REGISTERED!`);
+                loadStudents();
+            } catch (e) { 
+                console.error("Registration error:", e);
+                alert("Error: Student ID likely already exists."); 
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "SAVE & GENERATE";
+            }
+        }
+        window.registerStudent = registerStudent;
+
+        async function deleteStudent(id) {
+            if (confirm("Are you sure you want to remove this student? This action cannot be undone.")) {
+                try {
+                    const snap = await window.db.collection('cadets').where("serial", "==", id).get();
+                    if (!snap.empty) {
+                        for (let doc of snap.docs) await doc.ref.delete();
+                    }
+                    loadStudents();
+                    showToast("STUDENT DELETED", "error");
+                } catch (e) {
+                    alert("Error removing student.");
+                }
+            }
+        }
+
+        function showQR(name, serial, department, year_level, section, gender) {
+            if (qrClearTimeout) {
+                clearTimeout(qrClearTimeout);
+                qrClearTimeout = null;
+            }
+            showTab('manage'); // Switch to registration tab to show the QR
+            const qrContainer = document.getElementById("qrcode");
+            qrContainer.innerHTML = "";
+            new QRCode(qrContainer, { text: JSON.stringify({ name, serial, department, year_level, section, gender }), width: 200, height: 200 });
+            document.getElementById('download-btn').style.display = 'block';
+        }
+
+        function printStudent(serial, name, department, year_level, section, gender) {
+            const printArea = document.getElementById("print-area");
+            printArea.innerHTML = `
+                <div class="id-card-print">
+                    <h2 style="margin:0; color:#1a2a6c;">CWTS STUDENT ID</h2>
+                    <hr style="border:1px solid #eee; margin:10px 0;">
+                    <div id="print-qr" style="display:flex; justify-content:center; margin:15px 0;"></div>
+                    <div style="text-align:left; font-family:sans-serif;">
+                        <p style="margin:5px 0;"><strong>NAME:</strong> ${name.toUpperCase()}</p>
+                        <p style="margin:5px 0;"><strong>STUDENT ID:</strong> ${serial}</p>
+                        <p style="margin:5px 0;"><strong>DEPT:</strong> ${department}</p>
+                        <p style="margin:5px 0;"><strong>YEAR & SEC:</strong> ${year_level} - ${section}</p>
+                        <p style="margin:5px 0;"><strong>GENDER:</strong> ${gender}</p>
+                    </div>
+                    <p style="font-size:0.7rem; color:gray; margin-top:15px;">Official CWTS Attendance QR Identification</p>
+                </div>
+            `;
+            const qrBox = document.getElementById("print-qr");
+            new QRCode(qrBox, { text: JSON.stringify({ name, serial, department, year_level, section, gender }), width: 140, height: 140 });
+
+            setTimeout(() => {
+                window.print();
+                printArea.innerHTML = "";
+            }, 500);
+        }
+
+        function toggleSelectAllCadets(master) {
+            const checkboxes = document.querySelectorAll('.cadet-checkbox');
+            checkboxes.forEach(cb => cb.checked = master.checked);
+        }
+
+        async function printSelectedStudents() {
+            const selected = document.querySelectorAll('.cadet-checkbox:checked');
+            if (selected.length === 0) return alert("Please select at least one student to print.");
+
+            const printArea = document.getElementById("print-area");
+            printArea.innerHTML = `<div id="bulk-print-container" style="display: flex; flex-wrap: wrap; gap: 20px; justify-content: center;"></div>`;
+            const container = document.getElementById("bulk-print-container");
+
+            selected.forEach((cb, index) => {
+                const d = cb.dataset;
+                const cardId = `bulk-card-${index}`;
+                const qrId = `bulk-qr-${index}`;
+
+                container.innerHTML += `
+                    <div id="${cardId}" class="id-card-print" style="width: 350px; border: 2px solid #1a2a6c; padding: 20px; border-radius: 15px; background: white; color: black; text-align: center;">
+                        <h2 style="margin:0; color:#1a2a6c; font-size: 18px;">CWTS STUDENT ID</h2>
+                        <hr style="border:1px solid #eee; margin:10px 0;">
+                        <div id="${qrId}" style="display:flex; justify-content:center; margin:15px 0;"></div>
+                        <div style="text-align:left; font-family:sans-serif; font-size: 13px;">
+                            <p style="margin:4px 0;"><strong>NAME:</strong> ${d.name.toUpperCase()}</p>
+                            <p style="margin:4px 0;"><strong>STUDENT ID:</strong> ${d.serial}</p>
+                            <p style="margin:4px 0;"><strong>DEPT:</strong> ${d.dept}</p>
+                            <p style="margin:4px 0;"><strong>YEAR & SEC:</strong> ${d.year} - ${d.sec}</p>
+                            <p style="margin:4px 0;"><strong>GENDER:</strong> ${d.gender}</p>
+                        </div>
+                        <p style="font-size: 0.6rem; color: gray; margin-top: 10px;">Official CWTS Attendance QR Identification</p>
+                    </div>
+                `;
+            });
+
+            // Generate QRs after HTMl is set
+            selected.forEach((cb, index) => {
+                const d = cb.dataset;
+                const qrContainer = document.getElementById(`bulk-qr-${index}`);
+                new QRCode(qrContainer, { 
+                    text: JSON.stringify({ 
+                        name: d.name, 
+                        serial: d.serial, 
+                        department: d.dept, 
+                        year_level: d.year, 
+                        section: d.sec, 
+                        gender: d.gender 
+                    }), 
+                    width: 120, 
+                    height: 120 
+                });
+            });
+
+            setTimeout(() => {
+                window.print();
+                printArea.innerHTML = "";
+            }, 800);
+        }
+
+
+        function downloadQR() {
+            const img = document.getElementById("qrcode").querySelector('img');
+            if (img) { const link = document.createElement('a'); link.download = 'qr.png'; link.href = img.src; link.click(); }
+        }
+
+        window.addEventListener('load', () => {
+            if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+
+            // Check for existing session
+            if (sessionStorage.getItem('adminAuthed') === 'true') {
+                overlay.style.display = 'none';
+                content.style.display = 'flex';
+                initDashboard();
+                
+                // Polling for updates
+                setInterval(loadLogs, 10000);
+                setInterval(loadStudents, 30000);
+            }
+        });
+    </script>
+</body>
+
+</html>
