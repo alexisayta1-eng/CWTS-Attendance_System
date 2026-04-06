@@ -10,8 +10,9 @@
     <meta name="theme-color" content="#1a2a6c">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
     <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
         /* Mobile-First Adjustments for Logs */
@@ -183,7 +184,7 @@
         </div>
     </div>
 
-    <script src="firebase-config.js"></script>
+    <script src="supabase-config.js"></script>
     <script>
         const overlay = document.getElementById('login-overlay');
         const content = document.getElementById('officer-content');
@@ -283,16 +284,19 @@
                 const now = new Date();
                 const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
-                // 1. Get all students via API
-                const cadetsSnap = await window.db.collection('cadets').get();
-                let allCadets = [];
-                cadetsSnap.forEach(doc => allCadets.push(doc.data()));
+                // 1. Get all students via Supabase
+                const { data: cadetsData, error: cadetsError } = await window.supabase.from('cadets').select('*');
+                if (cadetsError) throw cadetsError;
+                let allCadets = cadetsData || [];
 
-                // 2. Get today's attendance via API
-                const presentSnap = await window.db.collection('attendance').where("date", "==", dateStr).get();
-                let presentRecords = [];
-                presentSnap.forEach(doc => presentRecords.push(doc.data()));
-                const presentSerialSet = new Set(presentRecords.map(r => r.serial));
+                // 2. Get today's attendance via Supabase
+                const { data: presentData, error: presentError } = await window.supabase
+                    .from('attendance')
+                    .select('serial')
+                    .eq('date', dateStr);
+                if (presentError) throw presentError;
+                
+                const presentSerialSet = new Set((presentData || []).map(r => r.serial));
 
                 // 3. Filter absentees
                 const absentees = allCadets.filter(c => !presentSerialSet.has(c.serial));
@@ -323,8 +327,8 @@
                 const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 const isOffline = !navigator.onLine;
 
-                // Send to MySQL API
-                await window.db.collection('attendance').add({
+                // Send to Supabase
+                const { error: insertError } = await window.supabase.from('attendance').insert([{
                     student_name: student.name,
                     serial: student.serial || student.id,
                     department: student.department || student.unit || student.course || "N/A",
@@ -334,7 +338,9 @@
                     date: dateStr,
                     type: "PRESENT",
                     scanned_by: officerName
-                });
+                }]);
+
+                if (insertError) throw insertError;
 
                 // Increment Scan Counter
                 totalScansSession++;
@@ -421,16 +427,16 @@
             const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
             try {
-                const snap = await window.db.collection('attendance').where("date", "==", dateStr).get();
-                let records = [];
-                snap.forEach(doc => records.push({ id: doc.id, ...doc.data() }));
+                const { data, error } = await window.supabase
+                    .from('attendance')
+                    .select('*')
+                    .eq('date', dateStr);
+                
+                if (error) throw error;
 
-                // Sort by timestamp desc manually if we don't have composite index
-                records.sort((a,b) => {
-                   let ta = a.scan_time || "";
-                   let tb = b.scan_time || "";
-                   return tb.localeCompare(ta);
-                });
+                let records = (data || []);
+                // Sort by ID desc
+                records.sort((a, b) => (b.id - a.id));
                 
                 list.innerHTML = "";
                 records.forEach(d => {
@@ -463,14 +469,15 @@
                 document.getElementById('officer-content').style.display = 'flex';
                 document.getElementById('officer-welcome').textContent = `OFFICER IN CHARGE: ${officerName}`;
                 
-                // --- REAL-TIME LISTENERS (Replacing Polling) ---
-                const now = new Date();
-                const dateStr = now.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-                
-                window.db.collection('attendance').where("date", "==", dateStr).onSnapshot(snap => {
-                    console.log("Real-time: Officer logs updated");
-                    loadOfficerLogs(); // Refresh the UI when data changes
-                }, err => console.error("Officer logs listener error:", err));
+                // --- REAL-TIME LISTENERS (Supabase Channels) ---
+                window.supabase.channel('public:attendance')
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, payload => {
+                        console.log("Real-time: Officer logs updated");
+                        loadOfficerLogs();
+                    })
+                    .subscribe();
+
+                loadOfficerLogs(); // Initial load
             }
         });
     </script>

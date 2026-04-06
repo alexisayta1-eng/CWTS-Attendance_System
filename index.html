@@ -10,9 +10,9 @@
     <meta name="theme-color" content="#1a2a6c">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-    <script src="firebase-config.js"></script>
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
         .modal-overlay {
@@ -60,7 +60,7 @@
         <a href="admin.html" class="btn btn-secondary">ADMIN</a>
 
         <div style="margin-top: 2rem; font-size: 0.75rem; text-align: center; opacity: 0.5;">
-            Powered by Cloud Firestore & QR Technology
+            Powered by Supabase & QR Technology
         </div>
     </div>
 
@@ -120,12 +120,17 @@
 
             errorMsg.style.display = 'none';
             try {
-                const snapshot = await window.db.collection('cadets').where("serial", "==", id).get();
-                if (snapshot.empty) {
+                // Supabase Fetch
+                const { data, error } = await window.supabase
+                    .from('cadets')
+                    .select('*')
+                    .eq('serial', id)
+                    .single();
+
+                if (error || !data) {
                     errorMsg.style.display = 'block';
                     return;
                 }
-                const data = snapshot.docs[0].data();
                 showQR(data);
             } catch (e) {
                 console.error(e);

@@ -4,7 +4,7 @@ const ASSETS = [
     'admin.html',
     'officer.html',
     'style.css',
-    'firebase-config.js',
+    'supabase-config.js',
     'manifest.json'
 ];
 
@@ -37,10 +37,8 @@ self.addEventListener('fetch', (event) => {
     // Only cache GET requests
     if (event.request.method !== 'GET') return;
 
-    // Skip caching for Firebase/Firestore calls (they have their own persistence)
-    if (event.request.url.includes('firestore.googleapis.com') || 
-        event.request.url.includes('firebasejs') || 
-        event.request.url.includes('gstatic.com')) {
+    // Skip caching for External API calls (Supabase handles its own transport)
+    if (event.request.url.includes('supabase.co')) {
         return;
     }
 
