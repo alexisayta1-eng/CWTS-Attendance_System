@@ -169,6 +169,14 @@
     <div id="toast-container"></div>
     <!-- Print Hidden Area -->
     <div id="print-area"></div>
+    
+    <!-- Photo Modal Overlay -->
+    <div id="photo-modal" class="photo-modal-overlay" onclick="closePhotoModal()">
+        <div class="photo-modal-content">
+            <img id="full-photo" src="" alt="Student Photo">
+            <button class="btn btn-secondary" style="margin-top: 1rem;">CLOSE</button>
+        </div>
+    </div>
     <!-- Login Overlay -->
     <div id="login-overlay">
         <div class="glass-card login-box" style="position: relative;">
@@ -302,6 +310,7 @@
                             <thead>
                                 <tr>
                                     <th>Date</th>
+                                    <th>Photo</th>
                                     <th>Student Name</th>
                                     <th>Department</th>
                                     <th>Year & Section</th>
@@ -319,6 +328,15 @@
                     <h1 style="text-align: left;">STUDENT REGISTRATION</h1>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
                         <div>
+                            <div class="input-group">
+                                <label>Student Photo (Upload Image)</label>
+                                <input type="file" id="cadet-photo-file" accept="image/*" onchange="previewSelectedImage(this)">
+                                <div id="file-preview-container" style="display: none; margin-top: 10px; text-align: center;">
+                                    <img id="file-photo-preview" src="" style="width: 100px; height: 100px; border-radius: 12px; object-fit: cover; border: 2px solid var(--accent);">
+                                    <p style="font-size: 0.7rem; opacity: 0.7; margin-top: 5px;">Image Preview</p>
+                                </div>
+                            </div>
+
                             <div class="input-group">
                                 <label>Full Name</label>
                                 <input type="text" id="cadet-name" placeholder="Name">
@@ -389,6 +407,7 @@
                             <thead>
                                 <tr>
                                     <th style="width: 40px; text-align: center;"><input type="checkbox" id="select-all-cadets" onclick="toggleSelectAllCadets(this)"></th>
+                                    <th>Photo</th>
                                     <th>Student ID</th>
                                     <th>Name</th>
                                     <th>Department</th>
@@ -556,6 +575,11 @@
                 initMonthlyFilters();
                 loadMonthlySheet();
             }
+            if (tab === 'manage') {
+                // startCamera(); // Disabled camera for now
+            } else {
+                stopCamera();
+            }
         }
 
         function initDashboard() {
@@ -605,8 +629,10 @@
                         .insert([{ name: deptName }]);
                     if (error) throw error;
                     loadDepartments();
+                    showToast(`SUCCESS: ${deptName} ADDED!`);
                 } catch (e) {
-                    alert("Error adding department.");
+                    console.error("Error adding department:", e);
+                    alert("Error adding department: " + (e.message || e.error_description || JSON.stringify(e)));
                 }
             }
         }
@@ -671,9 +697,12 @@
                     const combinedYearSec = `${d.year_level || ''} ${d.section || ''}`.toLowerCase();
                     if (yearSecQuery && !combinedYearSec.includes(yearSecQuery)) return;
                     
+                    const photoUrl = d.photo_url || 'https://via.placeholder.com/150?text=NO+IMAGE';
+                    
                     hasResults = true;
                     list.innerHTML += `<tr>
                         <td><strong>${d.date}</strong></td>
+                        <td><img src="${photoUrl}" class="student-thumb" onclick="openPhotoModal('${photoUrl}')" onerror="this.src='https://via.placeholder.com/150?text=NO+IMAGE'"></td>
                         <td>${d.student_name}</td>
                         <td style="color: var(--accent); font-weight: 600;">${d.department || '-'}</td>
                         <td>${d.year_level || ''} - ${d.section || ''}</td>
@@ -873,8 +902,10 @@
             const list = document.getElementById('cadet-list');
             list.innerHTML = "";
             data.forEach(d => {
+                const photoUrl = d.photo_url || 'https://via.placeholder.com/150?text=NO+IMAGE';
                 list.innerHTML += `<tr>
                     <td style="text-align: center;"><input type="checkbox" class="cadet-checkbox" data-serial="${d.serial}" data-name="${d.name}" data-dept="${d.department || ''}" data-year="${d.year_level || ''}" data-sec="${d.section || ''}" data-gender="${d.gender || ''}"></td>
+                    <td><img src="${photoUrl}" class="student-thumb" onclick="openPhotoModal('${photoUrl}')" onerror="this.src='https://via.placeholder.com/150?text=NO+IMAGE'"></td>
                     <td><strong>${d.serial}</strong></td>
                     <td>${d.name}</td>
                     <td>${d.department || ''}</td>
@@ -916,11 +947,32 @@
                 
                 if (checkError) throw checkError;
                 if (existing && existing.length > 0) throw new Error("Student ID already exists");
+
+                let finalPhotoUrl = null;
+                const photoInput = document.getElementById('cadet-photo-file');
+                const file = photoInput.files[0];
+
+                if (file) {
+                    // Upload Image to Supabase Storage
+                    const fileName = `${serial}.jpg`;
+                    const { data: uploadData, error: uploadError } = await window.supabase.storage
+                        .from('cadet-photos')
+                        .upload(fileName, file, { upsert: true });
+
+                    if (uploadError) throw new Error("Image upload failed: " + uploadError.message);
+
+                    const { data: { publicUrl } } = window.supabase.storage
+                        .from('cadet-photos')
+                        .getPublicUrl(fileName);
+                    
+                    finalPhotoUrl = publicUrl;
+                }
                 
                 const { error: regError } = await window.supabase
                     .from('cadets')
                     .insert([{
-                        name, serial, department: dept, year_level: year, section, gender
+                        name, serial, department: dept, year_level: year, section, gender,
+                        photo_url: finalPhotoUrl
                     }]);
                 
                 if (regError) throw regError;
@@ -930,10 +982,12 @@
                 document.getElementById('cadet-name').value = "";
                 document.getElementById('cadet-serial').value = "";
                 document.getElementById('cadet-section').value = "";
+                document.getElementById('cadet-photo-file').value = ""; // Clear file input
+                document.getElementById('file-preview-container').style.display = 'none'; // Clear preview
                 
                 showToast(`SUCCESS: ${name} REGISTERED!`);
                 loadStudents();
-            } catch (e) { 
+            } catch (e) {
                 console.error("Registration error:", e);
                 alert("Error: " + e.message); 
             } finally {
@@ -1060,6 +1114,80 @@
         function downloadQR() {
             const img = document.getElementById("qrcode").querySelector('img');
             if (img) { const link = document.createElement('a'); link.download = 'qr.png'; link.href = img.src; link.click(); }
+        }
+
+        // --- Camera & Photo Logic ---
+        let currentStream = null;
+
+        async function startCamera() {
+            const video = document.getElementById('camera-video');
+            try {
+                if (currentStream) stopCamera();
+                currentStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+                video.srcObject = currentStream;
+            } catch (err) {
+                console.error("Camera error:", err);
+                showToast("Cannot access camera", "error");
+            }
+        }
+
+        function stopCamera() {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+                currentStream = null;
+            }
+        }
+
+        function capturePhoto() {
+            const video = document.getElementById('camera-video');
+            const canvas = document.getElementById('photo-canvas');
+            const preview = document.getElementById('preview-panel');
+            const controls = document.getElementById('camera-controls');
+
+            const context = canvas.getContext('2d');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            video.style.display = 'none';
+            preview.style.display = 'block';
+            controls.style.display = 'none';
+        }
+
+        function retakePhoto() {
+            const video = document.getElementById('camera-video');
+            const preview = document.getElementById('preview-panel');
+            const controls = document.getElementById('camera-controls');
+
+            video.style.display = 'block';
+            preview.style.display = 'none';
+            controls.style.display = 'flex';
+        }
+
+        function previewSelectedImage(input) {
+            const container = document.getElementById('file-preview-container');
+            const preview = document.getElementById('file-photo-preview');
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    preview.src = e.target.result;
+                    container.style.display = 'block';
+                }
+                reader.readAsDataURL(input.files[0]);
+            } else {
+                container.style.display = 'none';
+            }
+        }
+
+        function openPhotoModal(url) {
+            const modal = document.getElementById('photo-modal');
+            const img = document.getElementById('full-photo');
+            img.src = url;
+            modal.style.display = 'flex';
+        }
+
+        function closePhotoModal() {
+            document.getElementById('photo-modal').style.display = 'none';
         }
 
         window.addEventListener('load', () => {
