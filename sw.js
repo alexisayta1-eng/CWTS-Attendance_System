@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cwts-v2';
+const CACHE_NAME = 'cwts-v3';
 const ASSETS = [
     'index.html',
     'admin.html',
